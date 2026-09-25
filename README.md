@@ -1,0 +1,197 @@
+# starzero
+
+`starzero` puts a StarZero library on the command line: create libraries, upload media, wait for
+processing, search by transcript or by what is on screen, pull originals and thumbnails back,
+run workflow templates to completion, cut a recording into podcast clips, and talk to the StarZero
+agent about a library, files and renders included.
+It is built for coding agents first: no prompts, no spinners, stable exit codes, and `--json` on
+every command.
+
+This repository holds the releases. The source is developed in a private repository; questions and
+bug reports are welcome in the issues here.
+
+## Install
+
+Download the archive for your platform from the [latest release](https://github.com/ijw-fyi/starzero-cli-releases/releases/latest),
+put the binary on your `PATH` as `starzero`, and check it with `starzero --version`.
+
+| Platform | Archive |
+| --- | --- |
+| Linux x64 | `starzero-linux-x64.tar.gz` |
+| Linux arm64 | `starzero-linux-arm64.tar.gz` |
+| macOS Apple Silicon | `starzero-darwin-arm64.tar.gz` |
+| Windows x64 | `starzero-windows-x64.zip` |
+
+```sh
+curl -fsSLO https://github.com/ijw-fyi/starzero-cli-releases/releases/latest/download/starzero-linux-x64.tar.gz
+tar xzf starzero-linux-x64.tar.gz
+sudo mv starzero /usr/local/bin/
+starzero --version
+```
+
+Every release also carries `SHA256SUMS` for checking the download. Optional: an `ffprobe` on `PATH`
+(from ffmpeg) lets `media upload` estimate credits and skip files that are not media.
+
+## Authenticate
+
+Create an API key at https://app.starzero.ai/settings/api-keys, then either
+
+```sh
+export STARZERO_API_KEY=sz_...          # for scripts and agents
+starzero auth login --api-key sz_...    # or store it in the OS keychain
+```
+
+When no keychain is available (headless Linux, containers), set `STARZERO_KEYRING=0` to store the
+key in `~/.starzero/credentials` (mode 0600) instead. `starzero auth status` shows whose key it is and its scopes.
+
+## Quick tour
+
+### Libraries and media
+
+```sh
+starzero library list
+starzero library create --name "Interviews"
+starzero folder create --library <lib> --path /raw
+starzero media upload --library <lib> --folder /raw *.mp4        # returns when the bytes are stored
+starzero media watch  --library <lib> <mediaId>...               # blocks until processing finishes
+starzero media list   --library <lib> --status completed
+starzero search transcript --library <lib> --query "pricing"     # each hit prints its row, then the matched text
+starzero search visual     --library <lib> --query "whiteboard"
+starzero media thumbnail   --library <lib> <mediaId> --at 12.5
+starzero media download    --library <lib> <mediaId> --out clip.mp4
+```
+
+### Workflows
+
+Run a workflow template and collect its outputs:
+
+```sh
+starzero workflow template list                                   # yours, plus shared ones used before
+starzero workflow template describe <templateId>                  # the variables it expects
+starzero workflow instance create --template <templateId> --library <lib> --media <mediaId> --variables vars.json
+starzero workflow instance watch <instanceId>                     # silent until done; exit 0 only on completed
+starzero workflow instance get <instanceId>                       # app link, chat links per branch, render ids
+starzero output url <renderId>                                    # signed private mp4 URL (curl it)
+starzero output share <renderId>                                  # public share page + direct mp4 link
+```
+
+### Podcasts
+
+A podcast run cuts one media item into short clips. It is a workflow run started through a packaged
+template, so once started it is followed, inspected and cancelled with the `workflow instance`
+commands; `podcast-clips create` prints the instance it started plus every option it sent, defaults included.
+
+```sh
+starzero podcast-clips create --library <lib> --media <mediaId>                 # 3 clips, 1-2 min, 4:5, captions on
+starzero podcast-clips create --library <lib> --media <mediaId> --clips 5 --duration mix --aspect 9:16 --caption kamua/kamua-purple --music --watch
+starzero podcast-clips create --library <lib> --media <mediaId> --auto --instructions "keep the product demo"   # the agent picks count, length and pacing
+starzero podcast-clips create --help                                    # every flag, its default, and the caption types
+starzero podcast-clips list                                             # your podcast runs with their options; ids work with `workflow instance`
+starzero workflow instance watch <instanceId>                     # then `workflow instance get` for the render ids
+```
+
+### Chat
+
+A chat is a conversation with the StarZero agent about one library, optionally focused on a few
+media items. Each `chat send` is one turn: the CLI streams the agent's reply, tool activity and
+questions as they happen and returns when the turn ends. The chat keeps working server-side if you
+stop waiting, and `chat get` shows where it got to.
+
+```sh
+starzero chat create --library <lib> --content <mediaId> --title "Report"   # prints the chat id and app link
+starzero chat send <chatId> --message "Summarise the interview"   # streams the turn as it happens
+starzero chat send <chatId> --message-file brief.md --file notes.md   # message from a file, notes.md attached
+starzero chat get <chatId>                                        # transcript (last 20 entries) and whether it is still working
+starzero chat get <chatId> --all                                  # the whole transcript
+starzero chat list                                                # your chats, newest first
+starzero chat list --query "pricing interview"                    # semantic search over your chats
+starzero chat renders <chatId>                                    # videos the agent rendered; ids work with `output url`
+```
+
+### Artifacts
+
+Artifacts are the files a chat uses or produces: uploads you attach, documents and data the agent
+writes, generated audio and images. Each has a key of the form `<type>/<id>`, for example
+`file/66d0…`; `artifact list` prints the keys. Uploading happens through `chat send --file`, which
+ties the file to that chat.
+
+```sh
+starzero artifact list --chat <chatId>                            # one chat's artifacts
+starzero artifact list --type pdf                                 # the whole account, newest first, paged (--limit, --cursor)
+starzero artifact url <type>/<id>                                 # presigned URL for one artifact (curl it)
+```
+
+Add `--json` to any command for one JSON document on stdout, or set `STARZERO_JSON=1`. `chat send`
+is the exception: its transcript streams as NDJSON events, then the usual `{ "ok": true, ... }` line.
+
+## For agents
+
+- Every command is non-interactive. A missing flag is a usage error (exit 2), never a prompt.
+- Human output is deterministic and free of colour or cursor movement. `--json` gives
+  `{ "ok": true, "data": ..., "warnings"?: [...], "next"?: { "watch": "starzero ..." } }`.
+- Errors go to stderr as `CODE: message (hint)`, or with `--json` as
+  `{ "ok": false, "code", "message", "hint", "exitCode", "httpStatus"?, "apiCode"?, "requestId"? }`.
+- `media upload` is idempotent: re-running it skips files already in the library (matched by
+  content fingerprint) and reports them as `already-uploaded`.
+- `media upload --watch` and `media watch` block; pass `--timeout <seconds>` to cap the wait.
+  A timeout exits 6 and prints the command to resume waiting.
+- `--events` on `media upload` and `media watch` streams one JSON progress event per line to stderr.
+  Processing a clip takes minutes server-side even when the clip is seconds long; a silent wait is normal.
+- `media url` prints a presigned storage URL that carries no API key.
+- `workflow instance create` bills from the first second and is never retried. Variables are checked
+  against `template describe` first; a mismatch refuses the run (exit 5) unless `--force`.
+- `workflow instance watch` prints nothing until the run ends (`--progress` adds one stderr line per
+  30 s poll). Exit 0 means completed, 7 partially completed, 1 failed or cancelled, 6 timed out with
+  the run still going. Ctrl-C leaves the run on the server and prints the resume and cancel commands.
+- Shared templates never appear in the API's list; the CLI remembers every template it described or
+  started in `~/.starzero/templates.json` (id and name only) and shows them under `template list`.
+- `podcast-clips create` bills from the first second and is never retried. It sends the app's defaults for
+  every option you leave out and echoes the full set under `options`, so the JSON says exactly what ran.
+  `--caption` takes one of the types `--help` lists; `--caption-preset` and `--caption-style` pass any
+  other pair through, and the server answers a wrong one with a 400 naming the preset.
+- `chat send` blocks until the agent's turn ends (`--timeout`, default 600 s) and prints the turn as
+  it happens: the reply text, delegations, and a digest of finished tool calls
+  (`[tools 1:18 · content_frame_bounding_boxes x9 · view_media x2 · running: render_video]`) whenever
+  the agent speaks again or every 30 s, so a turn with hundreds of calls stays a few lines a minute.
+  Failed calls print at once with their error, and when the agent stops to ask questions
+  (`ask_questions`) they print in full and the summary's `next.answer` says to reply with another
+  `chat send`. `--tools` prints every finished call with its arguments instead. Exit 6 on timeout
+  and 130 on Ctrl-C both leave the turn running on the server; `chat get` reads the outcome. Exit 8
+  means the agent was still busy with the previous message.
+- `chat send --file <path>` uploads the file as an artifact of that chat first and prints
+  `[uploaded <path> as artifact "<type>/<id>"]`, so a retry can pass `--artifact <type>/<id>` instead.
+- Chats created by the CLI run gated tools without asking (yolo mode), because nobody is there to approve.
+- `chat renders` reads the render ids out of the chat's render tool calls (`render_video`,
+  `render_video_portrait_from_project`); a 24-hex id is a render id for `output url` and `output share`.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | success |
+| 1 | runtime or API error |
+| 2 | usage error |
+| 3 | authentication or missing scope |
+| 4 | not found |
+| 5 | refused before sending anything (credits, storage) |
+| 6 | timeout while waiting; the operation may still be running |
+| 7 | partial success (some files or media failed; details on stdout) |
+| 8 | conflict (file exists locally, server conflict) |
+| 130 | interrupted |
+
+## Environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `STARZERO_API_KEY` | API key; overrides the stored one |
+| `STARZERO_KEYRING=0` | store the key in `~/.starzero/credentials` (0600) instead of the OS keychain |
+| `STARZERO_CONFIG_DIR` | where that file lives (default `~/.starzero`) |
+| `STARZERO_JSON=1` | JSON output by default |
+| `STARZERO_API_URL` | assets API base URL override |
+| `STARZERO_WORKFLOW_API_URL` | workflow API base URL override |
+| `STARZERO_CHAT_API_URL` | chat (agents) API base URL override |
+| `STARZERO_DEBUG=1` | print stack traces for internal errors |
+
+## Changes
+
+Each release lists what changed on its release page.
