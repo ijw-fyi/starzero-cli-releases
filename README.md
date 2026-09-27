@@ -38,11 +38,11 @@ Create an API key at https://app.starzero.ai/settings/api-keys, then either
 
 ```sh
 export STARZERO_API_KEY=sz_...          # for scripts and agents
-starzero auth login --api-key sz_...    # or store it in the OS keychain
+starzero auth login --api-key sz_...    # or store it
 ```
 
-When no keychain is available (headless Linux, containers), set `STARZERO_KEYRING=0` to store the
-key in `~/.starzero/credentials` (mode 0600) instead. `starzero auth status` shows whose key it is and its scopes.
+The key is stored in `~/.starzero/credentials` (one line, mode 0600; on macOS and Linux a file that
+other users can read is refused). `starzero auth status` shows whose key it is and its scopes.
 
 ## Quick tour
 
@@ -184,8 +184,7 @@ is the exception: its transcript streams as NDJSON events, then the usual `{ "ok
 | Variable | Purpose |
 | --- | --- |
 | `STARZERO_API_KEY` | API key; overrides the stored one |
-| `STARZERO_KEYRING=0` | store the key in `~/.starzero/credentials` (0600) instead of the OS keychain |
-| `STARZERO_CONFIG_DIR` | where that file lives (default `~/.starzero`) |
+| `STARZERO_CONFIG_DIR` | where `credentials` lives (default `~/.starzero`) |
 | `STARZERO_JSON=1` | JSON output by default |
 | `STARZERO_API_URL` | assets API base URL override |
 | `STARZERO_WORKFLOW_API_URL` | workflow API base URL override |
