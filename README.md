@@ -85,6 +85,7 @@ starzero library create --name "Interviews"
 starzero folder create --library <lib> --path /raw
 starzero media upload --library <lib> --folder /raw *.mp4        # returns when the bytes are stored
 starzero media import --library <lib> https://www.youtube.com/watch?v=...   # a video URL the server fetches itself
+starzero media resolve --library <lib> https://www.youtube.com/playlist?list=...   # the videos behind a playlist, channel or folder share, minus those already in the library; nothing imported
 starzero media watch  --library <lib> <mediaId>...               # blocks until processing finishes
 starzero media list   --library <lib> --status completed
 starzero search transcript --library <lib> --query "pricing"     # each hit prints its row, then the matched text
@@ -193,9 +194,16 @@ is the exception: its transcript streams as NDJSON events, then the usual `{ "ok
   another URL in the same call; the API gives no reason).
   There is no estimate before sending: the server refuses the batch with exit 5 when credits or
   storage fall short, and a refusal on a later batch still prints the rows already imported.
+- `media resolve <url>` lists the videos behind a video, playlist, channel or folder share (Google
+  Drive, Box, Frame.io, Shade, Facebook) without importing any, so an agent can choose before paying:
+  one row per video with its platform id, title, duration and, for folder shares, path; `--json` adds
+  the provider's other columns under `extra`. With `--library` the videos that library already holds
+  are hidden (`--all` shows them with their media id), the count line says how many, and the hint is
+  the `media import` command for the rest. A URL with nothing behind it exits 1.
 - Every wait runs until the server finishes: `media upload --watch`, `media import --watch`, `media watch`,
   `workflow instance create --watch`, `workflow instance watch`, `podcast-clips create --watch`,
-  `output render` and `chat send` have no default limit. Pass `--timeout <seconds>` to cap one;
+  `output render` and `chat send` have no default limit (`media resolve` is the exception: its
+  `--timeout` defaults to the server's own 600 s cap). Pass `--timeout <seconds>` to cap one;
   a timeout exits 6 and, where the work continues on the server, prints the command to resume waiting.
 - `--events` on `media upload`, `media import --watch` and `media watch` streams one JSON progress event per line to stderr.
   Processing a clip takes minutes server-side even when the clip is seconds long; a silent wait is normal.
