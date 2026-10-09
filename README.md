@@ -104,6 +104,7 @@ starzero workflow template describe <templateId>                  # the variable
 starzero workflow instance create --template <templateId> --library <lib> --media <mediaId> --variables vars.json
 starzero workflow instance watch <instanceId>                     # silent until done; exit 0 only on completed
 starzero workflow instance get <instanceId>                       # app link, chat links per branch, render ids
+starzero workflow instance get <instanceId> --library --media     # plus the library name and the selected media (name, origin)
 starzero workflow instance share <instanceId>                     # public page for the run's outputs; --off takes it back
 starzero output url <renderId>                                    # signed private mp4 URL (curl it)
 starzero output share <renderId>                                  # public share page + direct mp4 link
@@ -207,6 +208,10 @@ is the exception: its transcript streams as NDJSON events, then the usual `{ "ok
 - `workflow instance share` makes the whole run public at `https://share.starzero.ai/i/<instanceId>`
   (no signature, no expiry) until `--off`; `output share` is the signed, expiring page of one render.
   Every run view carries `shared` and `sharePage`, and a finished unshared run with outputs has `next.shareRun`.
+- `workflow instance get --library --media` adds `library` (name, size) and `media` (name, status,
+  duration, origin) to the view through one assets call for the library and one per selected media;
+  the ids stay in `libraryId` and `mediaIds`. A media or library deleted since the run is a warning,
+  and a whole-library run resolves to an empty `media`.
 - Shared templates never appear in the API's list; the CLI remembers every template it described or
   started in `~/.starzero/templates.json` (id and name only) and shows them under `template list`.
 - `podcast-clips create` bills from the first second and is never retried. It sends the app's defaults for
