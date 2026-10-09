@@ -185,6 +185,10 @@ is the exception: its transcript streams as NDJSON events, then the usual `{ "ok
 - An `INTERNAL` error is a bug. A release binary reports it (the error message, the command name,
   the version and platform; never arguments, keys or tokens) and prints the event id; `reported` and
   `eventId` carry it with `--json`. Set `DO_NOT_TRACK=1` or `STARZERO_SENTRY_DSN=` to turn that off.
+- A release binary checks once a day, before a command, whether a newer release exists (one request
+  to the public releases page, cached in `~/.starzero/update-check.json`) and prints one stderr line
+  in both modes until it is upgraded: `update: starzero 0.13.0 is available (you have 0.12.0); <link>`.
+  Stdout is unaffected. `DO_NOT_TRACK=1` or `CI` set turns it off; `--help` and `--version` never check.
 - `media upload` is idempotent: re-running it skips files already in the library (matched by
   content fingerprint) and reports them as `already-uploaded`.
 - `media import` takes video URLs (YouTube, Google Drive, Frame.io, Facebook, most sites yt-dlp
@@ -280,7 +284,7 @@ is the exception: its transcript streams as NDJSON events, then the usual `{ "ok
 | `STARZERO_WORKFLOW_API_URL` | workflow API base URL override |
 | `STARZERO_CHAT_API_URL` | chat (agents) API base URL override |
 | `STARZERO_DEBUG=1` | print stack traces for internal errors |
-| `DO_NOT_TRACK=1` | never report a crash (any value works) |
+| `DO_NOT_TRACK=1` | never report a crash and never check for a newer release (any value works) |
 | `STARZERO_SENTRY_DSN` | where a release binary reports crashes; empty turns reporting off, a DSN of your own replaces ours |
 
 ## Changes
