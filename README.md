@@ -49,7 +49,9 @@ the forward. `--no-browser` is for everything else without a browser (plain SSH,
 it prints the URL and exits. Open the URL anywhere, and when the browser lands on a page that cannot
 load (`http://127.0.0.1:47831/callback?...`), run `auth login --callback` with that page's full
 address. The half-finished login waits in `~/.starzero/login-pending.json` (owner-only) until then,
-for up to an hour.
+for up to an hour. That address holds a one-time sign-in code, not a credential: it is redeemed only together
+with the verifier kept in that file, and it is spent on first use, so it can travel through a chat, a ticket or
+another person (an agent asking its user to paste it back is the intended use); a copy anywhere else grants nothing.
 
 For scripts and agents, create an API key at https://app.starzero.ai/settings/api-keys and either
 
@@ -161,10 +163,12 @@ starzero chat renders <chatId>                                    # videos the a
 
 Artifacts are the files a chat uses or produces: uploads you attach, documents and data the agent
 writes, generated audio and images. Each has a key of the form `<type>/<id>`, for example
-`file/66d0…`; `artifact list` prints the keys. Uploading happens through `chat send --file`, which
-ties the file to that chat.
+`file/66d0…`; `artifact list` prints the keys. `artifact upload` adds files to the account, outside
+any chat; `chat send --file` uploads into the chat it sends to. Any key attaches to any chat with
+`chat send --artifact`, including one shared from another account.
 
 ```sh
+starzero artifact upload logo.png brief.pdf                       # account-level artifacts, one row per file with its key
 starzero artifact list --chat <chatId>                            # one chat's artifacts
 starzero artifact list --type pdf                                 # the whole account, newest first, paged (--limit, --cursor)
 starzero artifact url <type>/<id>                                 # presigned URL for one artifact (curl it)
