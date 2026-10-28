@@ -174,6 +174,24 @@ starzero artifact list --type pdf                                 # the whole ac
 starzero artifact url <type>/<id>                                 # presigned URL for one artifact (curl it)
 ```
 
+### Skills
+
+A skill is a SKILL.md the agent loads when a message names it (`/cold-open`): a slug `name`, a
+`description`, the body, and up to 20 text files beside it. Skills live on the account; the CLI
+reads and writes them as a folder, one SKILL.md, or the `.skill` archive the app and Claude.ai
+exchange, the same layout Claude Code skills use on disk.
+
+```sh
+starzero skill list                                               # NAME, IMPORTANT, UPDATED, DESCRIPTION
+starzero skill get cold-open                                      # SKILL.md as stored, then its files by path and size
+starzero skill get cold-open --path references/style.md           # one file
+starzero skill pull cold-open --out skills                        # writes skills/cold-open/SKILL.md and the files beside it
+starzero skill pull cold-open --zip                               # writes cold-open.skill, the archive the app imports
+starzero skill push skills/cold-open                              # a folder, a SKILL.md or a .skill; exit 8 if the name is taken
+starzero skill push skills/cold-open --replace                    # replace it whole: important and the files follow the push
+starzero skill set cold-open important on                         # list it with its description in the agent's prompt
+```
+
 Add `--json` to any command for one JSON document on stdout, or set `STARZERO_JSON=1`. `chat send`
 is the exception: its transcript streams as NDJSON events, then the usual `{ "ok": true, ... }` line.
 
@@ -250,6 +268,15 @@ is the exception: its transcript streams as NDJSON events, then the usual `{ "ok
 - `chat send --file <path>` uploads the file as an artifact of that chat first and prints
   `[uploaded <path> as artifact "<type>/<id>"]`, so a retry can pass `--artifact <type>/<id>` instead.
 - Chats created by the CLI run gated tools without asking (yolo mode), because nobody is there to approve.
+- `skill push` takes a folder (SKILL.md at its root, text files beside it at their relative paths),
+  one SKILL.md, or a `.skill` archive; the name, description and `important` flag come from the
+  frontmatter. Packaging folders (`.git`, `node_modules`, `evals/` at the root) are left out, and a
+  binary file or a symbolic link is a warning, since skill files are text and a link's target can be
+  anywhere on disk (a binary asset is an artifact). The push
+  refuses locally (exit 2, naming the field or file) when a limit is broken, and exits 8 when the
+  name is taken unless `--replace`, which replaces the skill whole. `/name` in a `chat send` message
+  loads a new skill at once; the agent's prompt lists it within 30 s. `skill pull` writes the same
+  layout back, overwriting the skill's own files and nothing else. There is no delete; the app has one.
 - `chat renders` reads the render ids out of the chat's render tool calls (`render_video`,
   `render_video_portrait_from_project`); a 24-hex id is a render id for `output url` and `output share`.
 - `starzero credits` is the balance check before a billed command: `data.creditsLeft` is what can be
