@@ -304,6 +304,11 @@ is the exception: its transcript streams as NDJSON events, then the usual `{ "ok
 | 8 | conflict (file exists locally, server conflict) |
 | 130 | interrupted |
 
+When the reader of stdout closes the pipe early (`| head`, a pager quit), the CLI stops at once: a
+command that had already failed keeps its exit code, one still on its success path exits 0, since
+the output had no one left to read it. A `chat send` cut off that way keeps running on the server;
+`chat get` reads the turn afterwards.
+
 ## Environment variables
 
 | Variable | Purpose |
