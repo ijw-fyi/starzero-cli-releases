@@ -42,8 +42,12 @@ starzero auth login --no-browser        # prints the URL instead and stops
 starzero auth login --callback "http://127.0.0.1:47831/callback?code=..."   # finishes a --no-browser login
 ```
 
-The browser login asks for every scope the CLI uses except deleting, and the token it stores lasts
-5 days; run `auth login` again after that. Over VS Code Remote SSH the plain `auth login` works too: the CLI prints
+The browser login asks for every scope the CLI uses except deleting, and it renews itself: a command
+that starts with under a day left on the token renews it first, so you stay logged in. A login belongs
+to one machine: a copy of the credentials file used elsewhere gets the login revoked on both at the
+next renewal, so log in on each machine, or use an API key. Machines logged in from one browser
+session can share a login, so `auth logout` on one may end the other. A CLI that needs a new scope asks you to
+log in again. Over VS Code Remote SSH the plain `auth login` works too: the CLI prints
 the address it listens on, VS Code forwards that port, and the login page's redirect reaches it through
 the forward. `--no-browser` is for everything else without a browser (plain SSH, containers, an agent session):
 it prints the URL and exits. Open the URL anywhere, and when the browser lands on a page that cannot
@@ -61,10 +65,10 @@ starzero auth login --api-key sk_sz_...    # or store it
 ```
 
 The credential is stored in `~/.starzero/credentials` (one JSON line, mode 0600; on macOS and Linux
-a file that other users can read is refused). An API key there is a long-lived secret, a browser login expires after
-five days; on a shared machine, prefer `STARZERO_API_KEY` for the session.
-`starzero auth status` shows whose credential it is, its type, scopes and expiry; `starzero auth logout`
-removes it and revokes a browser login token; `starzero credits` shows what the account can spend.
+a file that other users can read is refused). An API key there is a long-lived secret, and so is a browser login, which renews itself;
+on a shared machine, prefer `STARZERO_API_KEY` for the session.
+`starzero auth status` shows whose credential it is, its type, scopes, expiry and whether it renews itself; `starzero auth logout`
+removes it and revokes a browser login on the server, which also ends a chat turn running on it; `starzero credits` shows what the account can spend.
 
 ## Quick tour
 
@@ -192,6 +196,46 @@ starzero skill push skills/cold-open --replace                    # replace it w
 starzero skill set cold-open important on                         # list it with its description in the agent's prompt
 ```
 
+### Social publishing (experimental)
+
+A render goes out to the accounts linked in the app (TikTok accounts, Facebook Pages, YouTube
+channels) as scheduled posts, one per account, each with the exact content its platform takes;
+nothing is translated between platforms, and linking or unlinking an account stays in the app.
+These commands and their `--json` rows may change in a minor release. The browser login carries
+both scopes (a login from before 0.16.0 needs `auth login` again); an API key lists with
+`social:read` and schedules, edits, cancels or retries with `social:publish`.
+
+```sh
+starzero social account list                                      # ID, PLATFORM, NAME, STATUS; needs_reauth means reconnect it in the app
+starzero social account get <connectionId>                        # what it may post right now, read live: privacy levels, limits, or its verdict
+starzero social post schedule --render <renderId> --at 2026-11-03T16:00:00Z --targets posts.json   # one post per target, all or nothing
+starzero social post list                                         # this calendar month (local time); --from/--to for another window
+starzero social post list --render <renderId>                     # that render's posts at any time
+starzero social post list --status failed --status needs_attention
+starzero social post get <postId>                                 # status, content, attempts, the link once published
+starzero social post edit <postId> --at now                       # and/or --content content.json: the whole content, replaced
+starzero social post cancel <postId>                              # a held post; it stays listed as cancelled
+starzero social post retry <postId>                               # a failed or needs_attention post back to scheduled
+```
+
+`posts.json` is an array of targets, or one target as an object: the account id and that
+platform's content, in the platform's own vocabulary.
+
+```json
+[
+  { "connectionId": "66d0…", "content": { "platform": "youtube", "title": "Cold open", "description": "…", "tags": ["clips"], "privacy": "unlisted", "madeForKids": false, "containsSyntheticMedia": false, "notifySubscribers": true } },
+  { "connectionId": "66d0…", "content": { "platform": "tiktok", "draft": false, "title": "Cold open", "privacy": "PUBLIC_TO_EVERYONE", "disableComment": false, "aiGenerated": false } },
+  { "connectionId": "66d0…", "content": { "platform": "facebook", "kind": "reel", "title": "Cold open", "description": "…", "draft": false } }
+]
+```
+
+A YouTube post needs `title` and the `madeForKids` declaration; TikTok publishes API posts to
+everyone, so `privacy` is `PUBLIC_TO_EVERYONE`, and `draft: true` sends the video to the account's
+inbox to finish in the app instead; a Facebook `kind` is `reel` or `video`. `social account get`
+reports what the account allows (privacy levels, duration and size limits), and the server checks
+every target before scheduling any: a refusal exits 5 naming each refused account and what was
+wrong, and nothing is scheduled.
+
 Add `--json` to any command for one JSON document on stdout, or set `STARZERO_JSON=1`. `chat send`
 is the exception: its transcript streams as NDJSON events, then the usual `{ "ok": true, ... }` line.
 
@@ -277,6 +321,20 @@ is the exception: its transcript streams as NDJSON events, then the usual `{ "ok
   name is taken unless `--replace`, which replaces the skill whole. `/name` in a `chat send` message
   loads a new skill at once; the agent's prompt lists it within 30 s. `skill pull` writes the same
   layout back, overwriting the skill's own files and nothing else. There is no delete; the app has one.
+- `social post schedule --at` takes an ISO 8601 date-time, a date (local midnight), epoch
+  milliseconds, or `now`, which publishes at the next worker tick; the API names its limits when it refuses.
+  Scheduling does not bill and is never retried. A target the server refuses exits 5 as
+  `POST_REFUSED`, with every refused account and its violations under `apiData.targets`; nothing was
+  scheduled. The result's `groupId` is shared by the call's posts and `next.list` lists the render's
+  posts.
+- `social post list` lists a window: this calendar month on the local clock by default, the 45 days
+  after `--from` or before `--to`, or exactly both, which the API refuses when wider than it allows;
+  the window listed prints first and is `data.window`. `--render <id>` alone lists that render's
+  posts at any time, as many as the API answers (`data.window` null). An account the platform dropped fails `social
+  account list` with `CONFLICT` (exit 8) until it is reconnected in the app; `post edit`, `cancel`
+  and `retry` answer the same exit 8 when the post's status does not allow them. A cancel recalls
+  nothing at the platform: a post stopped as `attempt_unconfirmed` may be live there, so read the
+  account before retrying it.
 - `chat renders` reads the render ids out of the chat's render tool calls (`render_video`,
   `render_video_portrait_from_project`); a 24-hex id is a render id for `output url` and `output share`.
 - `starzero credits` is the balance check before a billed command: `data.creditsLeft` is what can be
@@ -298,7 +356,7 @@ is the exception: its transcript streams as NDJSON events, then the usual `{ "ok
 | 2 | usage error |
 | 3 | authentication or missing scope |
 | 4 | not found |
-| 5 | refused before sending anything (credits, storage) |
+| 5 | refused before sending anything (credits, storage, a social post the server refused at preflight) |
 | 6 | timeout while waiting; the operation may still be running |
 | 7 | partial success (some files or media failed; details on stdout) |
 | 8 | conflict (file exists locally, server conflict) |
