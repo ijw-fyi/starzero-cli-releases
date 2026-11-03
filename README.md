@@ -150,7 +150,9 @@ starzero workflow instance watch <instanceId>                     # then `workfl
 A chat is a conversation with the StarZero agent about one library, optionally focused on a few
 media items. Each `chat send` is one turn: the CLI streams the agent's reply, tool activity and
 questions as they happen and returns when the turn ends. The chat keeps working server-side if you
-stop waiting, and `chat get` shows where it got to.
+stop waiting, and `chat get` shows where it got to. When the chat's context fills up, `chat send`
+and `chat get` say so, and `chat compact` folds the history into one summary the agent reads from
+then on, billed like a turn.
 
 ```sh
 starzero chat create --library <lib> --content <mediaId> --title "Report"   # prints the chat id and app link
@@ -158,6 +160,7 @@ starzero chat send <chatId> --message "Summarise the interview"   # streams the 
 starzero chat send <chatId> --message-file brief.md --file notes.md   # message from a file, notes.md attached
 starzero chat get <chatId>                                        # transcript (last 20 entries) and whether it is still working
 starzero chat get <chatId> --all                                  # the whole transcript
+starzero chat compact <chatId>                                    # fold the history into one summary for the agent (billed like a turn)
 starzero chat list                                                # your chats, newest first
 starzero chat list --query "pricing interview"                    # semantic search over your chats
 starzero chat renders <chatId>                                    # videos the agent rendered; ids work with `output url`
@@ -304,8 +307,11 @@ is the exception: its transcript streams as NDJSON events, then the usual `{ "ok
   Failed calls print at once with their error, and when the agent stops to ask questions
   (`ask_questions`) they print in full and the summary's `next.answer` says to reply with another
   `chat send`. `--tools` prints every finished call with its arguments instead. The footer and
-  `data.context` give the size of the last call (`12,345 tokens in context`): watch it grow and start
-  a new chat when it gets large, since `data.usage` is what the whole turn cost, not the context.
+  `data.context` give the size of the last call (`12,345 tokens in context`), while `data.usage` is
+  what the whole turn cost. The server says when that context is full: `chat send` and `chat get`
+  print a warning and a `compact` hint when the chat should be compacted at a good stopping point,
+  or must be compacted before the next message (`data.hints.shouldCompact` and `mustCompact` in
+  `--json`). `chat compact <chatId>` does it, billed like a turn; nothing compacts on its own.
   Exit 6 on timeout
   and 130 on Ctrl-C both leave the turn running on the server; `chat get` reads the outcome. Exit 8
   means the agent was still busy with the previous message.
@@ -356,7 +362,7 @@ is the exception: its transcript streams as NDJSON events, then the usual `{ "ok
 | 2 | usage error |
 | 3 | authentication or missing scope |
 | 4 | not found |
-| 5 | refused before sending anything (credits, storage, a social post the server refused at preflight) |
+| 5 | refused before sending anything (credits, storage, a social post the server refused at preflight, a compaction with nothing new to compact) |
 | 6 | timeout while waiting; the operation may still be running |
 | 7 | partial success (some files or media failed; details on stdout) |
 | 8 | conflict (file exists locally, server conflict) |
