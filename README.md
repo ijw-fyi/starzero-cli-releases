@@ -39,7 +39,7 @@ At a keyboard, log in through the browser:
 ```sh
 starzero auth login                     # opens the browser; the CLI waits for the login to finish
 starzero auth login --no-browser        # prints the URL instead and stops
-starzero auth login --callback "http://127.0.0.1:47831/callback?code=..."   # finishes a --no-browser login
+starzero auth login --code <code>       # finishes a --no-browser login with the code the page shows
 ```
 
 The browser login asks for every scope the CLI uses except deleting, and it renews itself: a command
@@ -50,12 +50,13 @@ session can share a login, so `auth logout` on one may end the other. A CLI that
 log in again. Over VS Code Remote SSH the plain `auth login` works too: the CLI prints
 the address it listens on, VS Code forwards that port, and the login page's redirect reaches it through
 the forward. `--no-browser` is for everything else without a browser (plain SSH, containers, an agent session):
-it prints the URL and exits. Open the URL anywhere, and when the browser lands on a page that cannot
-load (`http://127.0.0.1:47831/callback?...`), run `auth login --callback` with that page's full
-address. The half-finished login waits in `~/.starzero/login-pending.json` (owner-only) until then,
-for up to an hour. That address holds a one-time sign-in code, not a credential: it is redeemed only together
-with the verifier kept in that file, and it is spent on first use, so it can travel through a chat, a ticket or
-another person (an agent asking its user to paste it back is the intended use); a copy anywhere else grants nothing.
+it prints the URL and exits. Open the URL anywhere; the page you end on shows a sign-in code with a Copy
+button, and `auth login --code <code>` finishes the login. The half-finished login waits in
+`~/.starzero/login-pending.json` (owner-only) until then, for up to an hour; the code itself lives ten minutes
+once the page shows it. The code is redeemed only together with the verifier kept in that file, and it is spent on
+first use, so handing it back to the CLI or agent that started the login through a chat or a ticket is the intended
+use. It belongs to that login alone: a login link someone else sends you starts their login, and a code you hand
+them logs them in as you.
 
 For scripts and agents, create an API key at https://app.starzero.ai/settings/api-keys and either
 
