@@ -245,134 +245,48 @@ is the exception: its transcript streams as NDJSON events, then the usual `{ "ok
 
 ## For agents
 
-- Every command is non-interactive, with one exception: `auth login` without `--api-key` waits for a
-  browser login. Agents use `STARZERO_API_KEY` or `auth login --api-key`. Everywhere else a missing
-  flag is a usage error (exit 2), never a prompt.
-- Human output is deterministic and free of colour or cursor movement. `--json` gives
-  `{ "ok": true, "data": ..., "warnings"?: [...], "next"?: { "watch": "starzero ..." } }`.
-- Errors go to stderr as `CODE: message (hint)`, or with `--json` as
-  `{ "ok": false, "code", "message", "hint", "exitCode", "httpStatus"?, "apiCode"?, "requestId"?, "reported"?, "eventId"? }`.
-- An `INTERNAL` error is a bug. A release binary reports it (the error message, the command name,
-  the version and platform; never arguments, keys or tokens) and prints the event id; `reported` and
-  `eventId` carry it with `--json`. Set `DO_NOT_TRACK=1` or `STARZERO_SENTRY_DSN=` to turn that off.
-- A release binary checks once a day, before a command, whether a newer release exists (one request
-  to the public releases page, cached in `~/.starzero/update-check.json`) and prints one stderr line
-  in both modes until it is upgraded: `update: starzero 0.13.0 is available (you have 0.12.0); <link>`.
-  Stdout is unaffected. `DO_NOT_TRACK=1` or `CI` set turns it off; `--help` and `--version` never check.
-- `media upload` is idempotent: re-running it skips files already in the library (matched by
-  content fingerprint) and reports them as `already-uploaded`.
-- `media import` takes video URLs (YouTube, Google Drive, Frame.io, Facebook, most sites yt-dlp
-  reads), up to 100 per request, and prints one row per URL: `imported`, `already-imported` (the
-  server matched the platform's video id, so re-running is safe), or `failed` when the server could
-  not resolve it (a playlist or channel URL, a private or removed video, the same video under
-  another URL in the same call; the API gives no reason).
-  There is no estimate before sending: the server refuses the batch with exit 5 when credits or
-  storage fall short, and a refusal on a later batch still prints the rows already imported.
-- `media resolve <url>` lists the videos behind a video, playlist, channel or folder share (Google
-  Drive, Box, Frame.io, Shade, Facebook) without importing any, so an agent can choose before paying:
-  one row per video with its platform id, title, duration and, for folder shares, path; `--json` adds
-  the provider's other columns under `extra`. With `--library` the videos that library already holds
-  are hidden (`--all` shows them with their media id), the count line says how many, and the hint is
-  the `media import` command for the rest. A URL with nothing behind it exits 1.
-- Every wait runs until the server finishes: `media upload --watch`, `media import --watch`, `media watch`,
-  `workflow instance create --watch`, `workflow instance watch`, `podcast-clips create --watch`,
-  `output render` and `chat send` have no default limit (`media resolve` is the exception: its
-  `--timeout` defaults to the server's own 600 s cap). Pass `--timeout <seconds>` to cap one;
-  a timeout exits 6 and, where the work continues on the server, prints the command to resume waiting.
-- `--events` on `media upload`, `media import --watch` and `media watch` streams one JSON progress event per line to stderr.
-  Processing a clip takes minutes server-side even when the clip is seconds long; a silent wait is normal.
-- `media url` prints a presigned storage URL that carries no API key.
-- `workflow instance create` bills from the first second and is never retried. Variables are checked
-  against `template describe` first; a mismatch refuses the run (exit 5) unless `--force`.
-- `workflow instance watch` prints nothing until the run ends (`--progress` adds one stderr line per
-  30 s poll). Exit 0 means completed, 7 partially completed, 1 failed or cancelled, 6 timed out with
-  the run still going. Ctrl-C leaves the run on the server and prints the resume and cancel commands.
-- `workflow instance share` makes the whole run public at `https://share.starzero.ai/i/<instanceId>`
-  (no signature, no expiry) until `--off`; `output share` is the signed, expiring page of one render.
-  Every run view carries `shared` and `sharePage`, and a finished unshared run with outputs has `next.shareRun`.
-- `workflow instance get --library --media` adds `library` (name, size) and `media` (name, status,
-  duration, origin) to the view through one assets call for the library and one per selected media;
-  the ids stay in `libraryId` and `mediaIds`. A media or library deleted since the run is a warning,
-  and a whole-library run resolves to an empty `media`.
-- Shared templates never appear in the API's list; the CLI remembers every template it described or
-  started in `~/.starzero/templates.json` (id and name only) and shows them under `template list`.
-- `podcast-clips create` bills from the first second and is never retried. It sends the app's defaults for
-  every option you leave out and echoes the full set under `options`, so the JSON says exactly what ran.
-  `--caption` takes one of the types `--help` lists; `--caption-preset` and `--caption-style` pass any
-  other pair through, and the server answers a wrong one with a 400 naming the preset.
-- `chat send` blocks until the agent's turn ends, however long that takes unless `--timeout <seconds>`
-  is passed, and prints the turn as
-  it happens: the reply text, delegations, and a digest of finished tool calls
-  (`[tools 1:18 · content_frame_bounding_boxes x9 · view_media x2 · running: render_video]`) whenever
-  the agent speaks again or every 30 s, so a turn with hundreds of calls stays a few lines a minute.
-  Failed calls print at once with their error, and when the agent stops to ask questions
-  (`ask_questions`) they print in full and the summary's `next.answer` says to reply with another
-  `chat send`. `--tools` prints every finished call with its arguments instead. The footer and
-  `data.context` give the size of the last call (`12,345 tokens in context`), while `data.usage` is
-  what the whole turn cost. The server says when that context is full: `chat send` and `chat get`
-  print a warning and a `compact` hint when the chat should be compacted at a good stopping point,
-  or must be compacted before the next message (`data.hints.shouldCompact` and `mustCompact` in
-  `--json`). `chat compact <chatId>` does it, billed like a turn; nothing compacts on its own.
-  Exit 6 on timeout
-  and 130 on Ctrl-C both leave the turn running on the server; `chat get` reads the outcome. Exit 8
-  means the agent was still busy with the previous message.
-- `chat send --file <path>` uploads the file as an artifact of that chat first and prints
-  `[uploaded <path> as artifact "<type>/<id>"]`, so a retry can pass `--artifact <type>/<id>` instead.
-- Chats created by the CLI run gated tools without asking (yolo mode), because nobody is there to approve.
-- `skill push` takes a folder (SKILL.md at its root, text files beside it at their relative paths),
-  one SKILL.md, or a `.skill` archive; the name, description and `important` flag come from the
-  frontmatter. Packaging folders (`.git`, `node_modules`, `evals/` at the root) are left out, and a
-  binary file or a symbolic link is a warning, since skill files are text and a link's target can be
-  anywhere on disk (a binary asset is an artifact). The push
-  refuses locally (exit 2, naming the field or file) when a limit is broken, and exits 8 when the
-  name is taken unless `--replace`, which replaces the skill whole. `/name` in a `chat send` message
-  loads a new skill at once; the agent's prompt lists it within 30 s. `skill pull` writes the same
-  layout back, overwriting the skill's own files and nothing else. There is no delete; the app has one.
-- `social post schedule --at` takes an ISO 8601 date-time, a date (local midnight), epoch
-  milliseconds, or `now`, which publishes at the next worker tick; the API names its limits when it refuses.
-  Scheduling does not bill and is never retried. A target the server refuses exits 5 as
-  `POST_REFUSED`, with every refused account and its violations under `apiData.targets`; nothing was
-  scheduled. The result's `groupId` is shared by the call's posts and `next.list` lists the render's
-  posts.
-- `social post list` lists a window: this calendar month on the local clock by default, the 45 days
-  after `--from` or before `--to`, or exactly both, which the API refuses when wider than it allows;
-  the window listed prints first and is `data.window`. `--render <id>` alone lists that render's
-  posts at any time, as many as the API answers (`data.window` null). An account the platform dropped fails `social
-  account list` with `CONFLICT` (exit 8) until it is reconnected in the app; `post edit`, `cancel`
-  and `retry` answer the same exit 8 when the post's status does not allow them. A cancel recalls
-  nothing at the platform: a post stopped as `attempt_unconfirmed` may be live there, so read the
-  account before retrying it.
-- `chat renders` reads the render ids out of the chat's render tool calls (`render_video`,
-  `render_video_portrait_from_project`); a 24-hex id is a render id for `output url` and `output share`.
-- `starzero credits` is the balance check before a billed command: `data.creditsLeft` is what can be
-  spent now, `data.plan` is null on a free account (clean renders need a plan), and `data.notes`
-  lists the credit notes still holding credits, soonest expiry first.
-- `output render` blocks, silently, until the render is done (`--timeout <seconds>` to cap it) and is
-  never retried. A timeout (exit 6) or Ctrl-C drops the connection, which cancels the render; there
-  is no job to resume and no progress to show. The result is a file behind a presigned URL (valid
-  for `urlExpiresInSeconds`) that the service removes after a while; the API keeps no record of it,
-  so download it, or make a workflow or chat render for anything to keep. `--no-watermark` uses
-  credits (currently 250 per rendered minute), and the server refuses it without a subscription.
+Every command is non-interactive and deterministic, with `--json` everywhere. The binary carries its
+own documentation: `starzero help "<what you want to do>"` prints the sections and the command help
+that match, and `starzero help <topic>` prints one whole document. The topics, and the two sections
+after them, are the documentation as the binary carries it.
+
+| Topic | Covers |
+| --- | --- |
+| `starzero help billing` | Credits: how much does it cost, how many credits do I have, credits left, balance, billing, what bills, confirm before spending, estimate the cost, refused for credits, exit 5, one run at a time, low balance |
+| `starzero help chats` | Agent chats: edit a video with the agent, brief the agent, make it 9:16 with captions, cut these interviews into a recap, add a lower-third, apply my brand kit and render, generate a voiceover, add music, scan the whole library, continue my chat, send a message to the agent, the agent asked a question, compact the chat, context is full, attach a file to the chat, make graphics for the video, what did the chat render |
+| `starzero help conventions` | Reading the CLI's output: how do I read the output, what does the JSON look like, parse the result, warnings and hints, the next command to run, find the right command, which command does what, human output or --json, the update line on stderr, no prompts, non-interactive, delete something, print-traffic |
+| `starzero help environment` | Environment variables: environment variables, set the API key in the environment, config dir, where the credentials file lives, JSON by default, override the API URL, turn off crash reports, turn off the update check, debug an internal error |
+| `starzero help exit-codes` | Exit codes: what does exit code 3 mean, the command failed, exit 5, exit 6, exit 7, exit 8, exit 130, what to do after an error, the pipe closed early, usage error |
+| `starzero help ids-and-links` | Ids and links: where do I get the id, which id goes where, the link failed with 404, pass the link through, folder path, library id, media id, instance id, render id, chat id, template id, artifact key |
+| `starzero help login` | Logging in: log in, sign in, not logged in, exit 3, the login was revoked, needs scopes the login lacks, log in without a browser, sign-in code, API key, which scopes does a key need, credentials file, auth status, log out |
+| `starzero help moments` | Finding moments: find where they talk about, search my library for, which clip shows, find the moment when, grab a frame at, download the original, get a link to the original, compile those moments, preview the moments I found, search transcript, search visual, media thumbnail, media download |
+| `starzero help publishing` | Social publishing (experimental): schedule a post, publish the render to a social account, linked accounts, which posts are scheduled this month, cancel a post, retry a post, edit a scheduled post, the account was disconnected |
+| `starzero help renders` | Renders and outputs: share the run, share the clips, give me a link to the video, download the output, where are my rendered videos, thumbnail of that render, the share link expired, stop sharing the run, make a preview from the moments I found, render id, output url, output share |
+| `starzero help skills` | Skills: save this as a StarZero skill, write a skill for the agent, show my StarZero skills, push this skill, pull my skill to disk, edit a stored skill, mark a skill important, replace a skill, SKILL.md, the instructions the agent loads with /name |
+| `starzero help upload` | Uploads and imports: upload these files, upload a folder of recordings, put this video online, add this YouTube link to my library, import this playlist, import this channel, import these videos, get a recording into StarZero, is my footage done processing, dry run, credit estimate for an upload, already uploaded, create a library, make a folder, media upload, media import, media resolve |
+| `starzero help waiting` | Waiting for work to finish: is my run finished, is my footage done processing, wait for the upload to process, watch a run, how long does it take, the watch ended early, resume waiting, exit 6, exit 7, exit 130, Ctrl-C left the run going |
+| `starzero help workflows` | Workflow runs and podcast clips: run the workflow, start an instance of a template, what variables does this template need, is my run finished, what have I run, cancel the run, which media did the run use, shared template, make clips from this podcast, cut this into shorts, vertical clips for TikTok, reels from this interview, caption styles |
 
 ## Exit codes
 
-| Code | Meaning |
-| --- | --- |
-| 0 | success |
-| 1 | runtime or API error |
-| 2 | usage error |
-| 3 | authentication or missing scope |
-| 4 | not found |
-| 5 | refused before sending anything (credits, storage, a social post the server refused at preflight, a compaction with nothing new to compact) |
-| 6 | timeout while waiting; the operation may still be running |
-| 7 | partial success (some files or media failed; details on stdout) |
-| 8 | conflict (file exists locally, server conflict) |
-| 130 | interrupted |
+Exit codes decide, stdout informs. Read the code first, then the view on stdout and the error on stderr.
 
-When the reader of stdout closes the pipe early (`| head`, a pager quit), the CLI stops at once: a
-command that had already failed keeps its exit code, one still on its success path exits 0, since
-the output had no one left to read it. A `chat send` cut off that way keeps running on the server;
-`chat get` reads the turn afterwards.
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| 0 | success | continue |
+| 1 | runtime or API error | read stderr; a cancelled run also ends here. `INTERNAL` is a bug in the CLI, reported by the CLI itself: relay the message and the event id; a re-run rarely helps. `FILE_ERROR` means the disk refused a read or write of the path it names. `CREDENTIALS_LOCKED` means another process held the login; run the command again |
+| 2 | usage error | fix the flags; `--help` shows the accepted values |
+| 3 | authentication or missing scope: the browser login was revoked or comes from a CLI before 0.16.0, no credential, a bad credential, or a scope the credential lacks | log in again (`starzero help login`), then re-run |
+| 4 | not found | check the id came from a list or view |
+| 5 | refused before sending anything (credits, storage, invalid variables, a social post the server refused at preflight, a compaction with nothing new to compact) | report the numbers; nothing was billed; `starzero credits` shows the balance; for `chat compact`, send a message first |
+| 6 | the wait ended early: a watch gave up, or a request went unanswered; the operation may still be running | run the resume command from the hint; for `output render` the disconnect cancelled the render |
+| 7 | partial success (some files or media failed; details on stdout) | inspect the status column or sessions table; retrying is a separate decision |
+| 8 | conflict (a local file exists, a skill name is taken, the agent is busy with a message, a server conflict) | choose another `--out`, or ask before `--force`; for `skill push`, ask before `--replace`; for `chat send` and `chat compact`, `chat get` until `processing` is false |
+| 130 | interrupted | the run continues; the hint prints resume and cancel commands |
+
+### When the reader of stdout goes away
+
+When the reader of stdout closes the pipe early (`| head`, a pager quit), the CLI stops at once: a command that had already failed keeps its exit code, one still on its success path exits 0, since the output had no one left to read it. A `chat send` cut off that way keeps running on the server; `chat get` reads the turn afterwards. A command whose result matters runs unpiped.
 
 ## Environment variables
 
@@ -386,7 +300,10 @@ the output had no one left to read it. A `chat send` cut off that way keeps runn
 | `STARZERO_CHAT_API_URL` | chat (agents) API base URL override |
 | `STARZERO_DEBUG=1` | print stack traces for internal errors |
 | `DO_NOT_TRACK=1` | never report a crash and never check for a newer release (any value works) |
+| `CI` | set by CI systems; turns the update check off |
 | `STARZERO_SENTRY_DSN` | where a release binary reports crashes; empty turns reporting off, a DSN of your own replaces ours |
+
+The `--api-url`, `--workflow-api-url` and `--chat-api-url` flags override the three URL variables for one command. The config directory holds the credential (`credentials`), a half-finished `--no-browser` login (`login-pending.json`), the templates this machine has used (`templates.json`) and the day's update check (`update-check.json`).
 
 ## Changes
 
